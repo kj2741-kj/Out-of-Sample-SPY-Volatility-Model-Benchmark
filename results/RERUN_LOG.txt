@@ -1,0 +1,106 @@
+[24/192] 2011-12-15 max_lv=44.7% meanIVerr=0.245pp elapsed=0.1min
+[48/192] 2013-12-16 max_lv=38.9% meanIVerr=0.050pp elapsed=0.1min
+2014-11-14: EXCEPTION decreasing variance at strike 224.664 between time 0.0986301 and time 0.0987301
+2015-08-14: EXCEPTION decreasing variance at strike 230.362 between time 0.0958904 and time 0.0959904
+2015-11-16: EXCEPTION variances must be non-decreasing
+[72/192] 2015-12-15 max_lv=43.8% meanIVerr=1.360pp elapsed=0.2min
+2016-09-15: EXCEPTION decreasing variance at strike 236.808 between time 0.0931507 and time 0.0932507
+2017-05-15: EXCEPTION variances must be non-decreasing
+2017-07-14: EXCEPTION decreasing variance at strike 270.116 between time 0.090411 and time 0.090511
+2017-08-15: EXCEPTION decreasing variance at strike 271.161 between time 0.0849315 and time 0.0850315
+2017-11-15: EXCEPTION decreasing variance at strike 282.084 between time 0.0821918 and time 0.0822918
+[96/192] 2017-12-15 max_lv=60.3% meanIVerr=0.315pp elapsed=0.3min
+2018-06-15: EXCEPTION variances must be non-decreasing
+2019-05-15: EXCEPTION variances must be non-decreasing
+[120/192] 2019-12-16 max_lv=60.7% meanIVerr=0.972pp elapsed=0.4min
+[144/192] 2021-12-15 max_lv=51.7% meanIVerr=0.545pp elapsed=0.5min
+2023-11-15: EXCEPTION negative local vol^2 at strike 404.712 and time 1.17534; the black vol surface is not smooth enough
+[168/192] 2023-12-15 max_lv=38.8% meanIVerr=0.423pp elapsed=0.6min
+2024-09-16: EXCEPTION negative local vol^2 at strike 506.556 and time 0.912329; the black vol surface is not smooth enough
+[192/192] 2025-12-15 max_lv=46.2% meanIVerr=0.573pp elapsed=0.7min
+
+Done. 192 dates, 0 flagged unstable (max local vol > 200%), 12 exceptions.
+mean|IVerr| overall: 0.623pp
+Total time: 0.7min
+No checkpoint, starting fresh
+[4/192] 2010-04-15 elapsed=0.2min
+[8/192] 2010-08-16 elapsed=0.3min
+[12/192] 2010-12-15 elapsed=0.4min
+[16/192] 2011-04-15 elapsed=0.5min
+[20/192] 2011-08-15 elapsed=0.6min
+[24/192] 2011-12-15 elapsed=0.8min
+[28/192] 2012-04-16 elapsed=0.9min
+[32/192] 2012-08-15 elapsed=1.0min
+[36/192] 2012-12-14 elapsed=1.0min
+[40/192] 2013-04-15 elapsed=1.1min
+[44/192] 2013-08-15 elapsed=1.3min
+[48/192] 2013-12-16 elapsed=1.3min
+[52/192] 2014-04-15 elapsed=1.5min
+[56/192] 2014-08-15 elapsed=1.6min
+[60/192] 2014-12-15 elapsed=1.7min
+[64/192] 2015-04-15 elapsed=1.8min
+[68/192] 2015-08-14 elapsed=1.9min
+[72/192] 2015-12-15 elapsed=2.0min
+[76/192] 2016-04-15 elapsed=2.2min
+[80/192] 2016-08-15 elapsed=2.3min
+[84/192] 2016-12-15 elapsed=2.4min
+[88/192] 2017-04-13 elapsed=2.5min
+[92/192] 2017-08-15 elapsed=2.6min
+[96/192] 2017-12-15 elapsed=2.7min
+[100/192] 2018-04-16 elapsed=3.0min
+[104/192] 2018-08-15 elapsed=3.1min
+[108/192] 2018-12-14 elapsed=3.3min
+[112/192] 2019-04-15 elapsed=3.4min
+[116/192] 2019-08-15 elapsed=3.5min
+[120/192] 2019-12-16 elapsed=3.6min
+[124/192] 2020-04-15 elapsed=3.7min
+[128/192] 2020-08-14 elapsed=3.9min
+[132/192] 2020-12-15 elapsed=4.0min
+[136/192] 2021-04-15 elapsed=4.2min
+[140/192] 2021-08-16 elapsed=4.4min
+[144/192] 2021-12-15 elapsed=4.8min
+[148/192] 2022-04-14 elapsed=5.0min
+[152/192] 2022-08-15 elapsed=5.3min
+[156/192] 2022-12-15 elapsed=5.6min
+[160/192] 2023-04-14 elapsed=5.8min
+[164/192] 2023-08-15 elapsed=6.1min
+[168/192] 2023-12-15 elapsed=6.4min
+[172/192] 2024-04-15 elapsed=6.7min
+[176/192] 2024-08-15 elapsed=6.9min
+[180/192] 2024-12-16 elapsed=7.2min
+[184/192] 2025-04-15 elapsed=7.4min
+[188/192] 2025-08-15 elapsed=7.6min
+Traceback (most recent call last):
+  File "C:\Users\Kartavya\Desktop\NYU\Summer\Options Model Validation\src\phase9_oos_runner.py", line 260, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\Kartavya\Desktop\NYU\Summer\Options Model Validation\src\phase9_oos_runner.py", line 173, in main
+    year_cache[y] = pd.read_parquet(f"{PROJ}\\data\\clean\\spy_options_clean_{y}.parquet")
+                    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Kartavya\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 667, in read_parquet
+    return impl.read(
+           ~~~~~~~~~^
+        path,
+        ^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Kartavya\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 267, in read
+    path_or_handle, handles, filesystem = _get_path_or_handle(
+                                          ~~~~~~~~~~~~~~~~~~~^
+        path,
+        ^^^^^
+    ...<2 lines>...
+        mode="rb",
+        ^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Kartavya\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 140, in _get_path_or_handle
+    handles = get_handle(
+        path_or_handle, mode, is_text=False, storage_options=storage_options
+    )
+  File "C:\Users\Kartavya\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\common.py", line 882, in get_handle
+    handle = open(handle, ioargs.mode)
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Kartavya\\Desktop\\NYU\\Summer\\Options Model Validation\\data\\clean\\spy_options_clean_2026.parquet'

@@ -1,0 +1,15 @@
+# Bulk intermediate data (932MB) — regenerable from the raw vendor dataset via
+# src/phase1_data_pipeline.py. Individual files exceed GitHub's 50MB warning / 100MB limit.
+data/clean/
+
+# Rolling local backups of results — not part of the deliverable
+backups/
+
+# The raw 23.5M-row vendor dataset lives outside this repo (1.4GB); see README "Data".
+*.csv.gz
+spy_options_*.parquet
+
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
