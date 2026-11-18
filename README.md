@@ -18,28 +18,41 @@ correctly later?*
 
 ## Headline result
 
-Every model that captures the volatility smile roughly **halves** the out-of-sample pricing error
-of the constant-volatility family.
+Smile-aware models cut out-of-sample pricing error clearly against constant-volatility
+Black-Scholes: by about a third on pooled RMSE for SABR, Heston and Merton, by more than half for
+local volatility, and by 59-74% on median error. Local volatility is best by a margin that holds in
+every bootstrap resample; SABR, Heston and Merton are statistically tied with each other (their
+order changes with the metric).
 
-| Model | OOS RMSE | vega-RMSE | Coverage |
+| Model | Pooled RMSE ($) | Median abs error ($) | vs Black-Scholes (pooled) |
 |---|---|---|---|
-| Local Volatility (Dupire) | **0.603** | 8.73 | 91.1% |
-| SABR | 0.930 | 21.46 | 100% |
-| Heston | 0.960 | 21.60 | 99.9% |
-| Merton Jump-Diffusion | 0.993 | 22.32 | 100% |
-| GBM Monte Carlo | 1.742 | 25.43 | 100% |
-| CRR American | 1.750 | 25.67 | 100% |
-| Black-Scholes-Merton | 1.752 | 25.52 | 100% |
-| Black-76 | 1.752 | 25.52 | 100% |
-| *Andreasen-Huge* | *0.878* | *2.08* | *50.6% — excluded, see report §6.7* |
+| Local Volatility (Dupire) | **0.864** | **0.254** | -54% |
+| Merton Jump-Diffusion | 1.233 | 0.427 | -35% |
+| Heston | 1.256 | 0.391 | -33% |
+| SABR | 1.290 | 0.342 | -32% |
+| GBM Monte Carlo | 1.879 | 0.948 | -1% |
+| CRR American | 1.883 | 0.968 | 0% |
+| Black-Scholes-Merton | 1.889 | 0.961 | |
+| Black-76 | 1.889 | 0.961 | |
+| *Reference: Black-Scholes at each contract's own same-day vendor IV* | *0.485* | *0.146* | *floor, not a model* |
 
-> Post-audit figures, regenerated from `results/phase9_oos_scores.csv`. A consistency audit found
-> five issues (a SABR forward-definition mismatch, a split rate convention, and a crash that
-> silently dropped 4 dates, among others); all were fixed and every affected result recomputed.
-> See `docs/FINAL_REPORT.md` §3.1.
+7,828 contracts priced by all eight ranked models (91.2% of 8,583 scorings, 573 date-horizon
+cells, 192 calibration dates). Andreasen-Huge prices 50.5% of the grid, the hard half missing,
+and is excluded (report section 6.7).
 
-**Local Volatility is the most accurate model and the least robust to build** — it fails surface
-construction outright on 7% of dates. Accuracy and robustness point in opposite directions.
+> Second audit, 2026-11-18 (report section 3.2). The earlier headline reported an n-weighted mean of
+> per-cell RMSEs and a "fair subset" defined by cell presence, which let local volatility skip 182
+> contracts; three corrupt quotes (one vendor day carrying call prices in put rows) and a
+> year-boundary bug that dropped every December 21-day horizon were also fixed. Figures above are
+> pooled RMSE on contract-level like-for-like data from `results/phase9_oos_contracts.csv`.
+
+**Local Volatility is the most accurate model and the least robust to build**: it fails surface
+construction outright on about 6% of dates (12 of 192 in the 2026-11-18 rerun). Accuracy and robustness point in opposite directions.
+
+**A floor shared by every model.** Black-Scholes at each contract's own same-day vendor IV still
+misses the mid by 0.485 pooled (0.560 in 2014-25, 0.142 in 2010-13), because calibration targets
+vendor IVs while scoring uses mids under this project's rate and dividend assumptions. Much of the
+2014-25 "era effect" is this data-convention gap rather than a harder market.
 
 ## Models
 
@@ -95,11 +108,14 @@ python src/phase10_analysis.py            # summary tables
 
 All batch scripts are resumable and skip already-completed dates.
 
-Requires `QuantLib`, `numpy`, `pandas`, `scipy`, `pyarrow`, `yfinance`.
+Requires `QuantLib`, `numpy`, `pandas`, `scipy`, `pyarrow`, `yfinance`. Data files were rewritten
+on 2026-11-18 so pyarrow 19 can read them (they had been written by pyarrow 24).
+
+Checks: `python tests/test_scoring.py` (quote filters, pooled RMSE, like-for-like, results file).
 
 ## Scope and limitations
 
 This is a **pricing-accuracy study, not a trading study** — no transaction costs, hedging or
 execution are modelled, and lower pricing error does not imply profitability. Single underlying
-(SPY). Flat 1.4% dividend proxy. Monthly calibration cadence only. Full list in
-`docs/FINAL_REPORT.md` §8.
+(SPY). Flat 1.4% dividend proxy. Monthly calibration cadence only. Calibration targets vendor IVs, which creates a
+shared error floor (above). Full list in `docs/FINAL_REPORT.md` §8.

@@ -33,11 +33,61 @@ TENOR_TOL_FRAC = 0.5
 Q_DIV = 0.014
 
 
-def build_scoring_grid(df, score_date):
-    """Nearest actual listed contract to each (moneyness, tenor) grid point on score_date."""
+def arbitrage_ok(day):
+    """AUDIT FIX (2026-11-18): drop quotes that violate American no-arbitrage bounds, i.e. a mid
+    below intrinsic value by more than half the spread, or above the underlying (call) / strike
+    (put). Three such quotes reached the 2019 scoring grid (mids $0.03-0.42 on contracts worth
+    $13-28), and because RMSE squares errors they dominated that year for every model. Contracts
+    just above intrinsic (valid American prices below the European bound) are kept."""
+    S, K, mid = day["spy_close"], day["strike"], day["mid"]
+    half_spread = (day["ask"] - day["bid"]).clip(lower=0) / 2
+    intrinsic = np.where(day["is_call"], np.maximum(S - K, 0.0), np.maximum(K - S, 0.0))
+    upper = np.where(day["is_call"], S, K)
+    return (mid >= intrinsic - half_spread) & (mid <= upper)
+
+
+def monotone_ok(day, min_gap=0.01):
+    """AUDIT FIX (2026-11-18): enforce the model-free vertical-spread bound within each
+    (expiration, option type): put prices must not fall as strike rises, call prices must not
+    rise. On 2019-02-14 the vendor carried call-like prices in PUT rows (a 247 put at $28.05
+    next to a 249 put at $0.40, SPY 274); those quotes pass every single-contract bound and the
+    day had no matching calls for a parity check. A pair violates if the gap exceeds both
+    half-spreads plus 1 cent. The quote in the most violations is removed, repeatedly, until
+    the group is consistent, which keeps the largest arbitrage-free set."""
+    keep = pd.Series(True, index=day.index)
+    half = ((day["ask"] - day["bid"]).clip(lower=0) / 2).values
+    pos = {ix: i for i, ix in enumerate(day.index)}
+    for (_, is_call), g in day.groupby(["expiration", "is_call"]):
+        if len(g) < 2:
+            continue
+        g = g.sort_values("strike")
+        K, m = g["strike"].values, g["mid"].values
+        h = half[[pos[ix] for ix in g.index]]
+        lower_k = K[:, None] < K[None, :]
+        tol = h[:, None] + h[None, :] + min_gap
+        if is_call:   # lower-strike call must cost at least as much
+            v = lower_k & (m[:, None] + tol < m[None, :])
+        else:         # lower-strike put must cost no more
+            v = lower_k & (m[:, None] > m[None, :] + tol)
+        v = v | v.T
+        alive = np.ones(len(g), dtype=bool)
+        while True:
+            counts = (v & alive[None, :] & alive[:, None]).sum(axis=1)
+            if counts.max() == 0:
+                break
+            alive[np.argmax(counts)] = False
+        keep.loc[g.index[~alive]] = False
+    return keep
+
+
+def build_scoring_grid(df, score_date, r=None):
+    """Nearest actual listed contract to each (moneyness, tenor) grid point on score_date.
+    `r` is accepted for interface stability; the quote filters below are model-free."""
     day = df[(df["date"] == score_date) & df["has_valid_quote"] & df["iv_quality_ok"]].copy()
     if len(day) == 0:
         return pd.DataFrame()
+    day = day[arbitrage_ok(day)]
+    day = day[monotone_ok(day)]
     picks = []
     for m in GRID_MONEYNESS:
         for tenor in GRID_TENORS:

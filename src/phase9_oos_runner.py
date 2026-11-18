@@ -38,6 +38,10 @@ from merton import merton_price_batch
 PDE_GRID = 100
 MC_PATHS = 20_000
 PROGRESS_CSV = f"{PROJ}\\results\\phase9_oos_scores.csv"
+# AUDIT FIX (2026-11-18): per-contract prices, so pooled RMSE and a contract-level
+# like-for-like subset can be computed (cell aggregates alone hid that LocalVol skipped
+# 182 contracts inside cells counted as "all models present").
+CONTRACTS_CSV = f"{PROJ}\\results\\phase9_oos_contracts.csv"
 
 
 def tenor_rate(r_ts, T):
@@ -151,13 +155,14 @@ def main():
     vas_params = pd.read_csv(f"{PROJ}\\results\\phase2_vasicek_params.csv").iloc[0]
     cv, he, sa, me, lv_bad = load_all_params()
 
-    rows = []
+    rows, crows = [], []
     try:
         prior = pd.read_csv(PROGRESS_CSV)
         prior["calib_date"] = pd.to_datetime(prior["calib_date"])
         done = set(prior["calib_date"].unique())
         dates = [d for d in dates if d not in done]
         rows = prior.to_dict("records")
+        crows = pd.read_csv(CONTRACTS_CSV).to_dict("records")
         print(f"RESUMING: {len(done)} calib dates scored, {len(dates)} remaining", flush=True)
     except FileNotFoundError:
         print("No checkpoint, starting fresh", flush=True)
@@ -214,7 +219,10 @@ def main():
             except Exception:
                 lv_ok = False
 
-        all_dates_t = np.array(sorted(year_cache[t.year]["date"].unique()))
+        # AUDIT FIX (2026-11-18): search future dates across the year boundary. Using only
+        # t's own year silently skipped every December h=21 horizon.
+        all_dates_t = np.array(sorted(set().union(*[
+            set(year_cache[y]["date"].unique()) for y in (t.year, t.year + 1) if y in year_cache])))
         for h in HORIZONS:
             fut = all_dates_t[all_dates_t > np.datetime64(t)]
             if len(fut) < h:
@@ -223,14 +231,14 @@ def main():
             df_s = year_cache.get(score_date.year)
             if df_s is None:
                 continue
-            grid = build_scoring_grid(df_s, score_date)
-            if len(grid) == 0:
-                continue
-            spot_s = grid["spy_close"].iloc[0]
             r_s = vas.loc[vas["date"] == score_date, "r3mo"]
             if r_s.empty:
                 continue
             r_s = r_s.iloc[0]
+            grid = build_scoring_grid(df_s, score_date, r=r_s)
+            if len(grid) == 0:
+                continue
+            spot_s = grid["spy_close"].iloc[0]
             eval_s, cal_s, dc_s, rts_s, qts_s = build_curves(score_date, r_s, vas_params)
 
             preds = {}
@@ -250,17 +258,34 @@ def main():
                 except Exception:
                     pass
 
+            # Reference, not a model: Black-Scholes at each contract's OWN same-day vendor IV.
+            # Its error is the floor every model inherits from calibrating to vendor IVs and
+            # being scored against mids.
+            oracle = [bs_price(spot_s, k.strike, k.T, tenor_rate(rts_s, k.T), Q_DIV,
+                               k.implied_volatility, k.is_call) for k in grid.itertuples(index=False)]
+
             for model, prices in preds.items():
                 m = score_metrics(prices, grid)
                 m.update(calib_date=t, score_date=score_date, horizon=h, model=model)
                 rows.append(m)
+            base = grid[["contractID", "strike", "T", "is_call", "mid", "bid", "ask", "vega",
+                         "implied_volatility"]].reset_index(drop=True)
+            for j, k in base.iterrows():
+                rec = dict(calib_date=t, score_date=score_date, horizon=h, spot=spot_s, **k.to_dict(),
+                           Oracle_VendorIV=oracle[j])
+                for model, prices in preds.items():
+                    v = prices[j]
+                    rec[model] = float(v) if v is not None and np.isfinite(v) else np.nan
+                crows.append(rec)
 
         if (i + 1) % 4 == 0:
             pd.DataFrame(rows).to_csv(PROGRESS_CSV, index=False)
+            pd.DataFrame(crows).to_csv(CONTRACTS_CSV, index=False)
             print(f"[{i+1}/{len(dates)}] {t.date()} elapsed={(time.time()-t_start)/60:.1f}min", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(PROGRESS_CSV, index=False)
+    pd.DataFrame(crows).to_csv(CONTRACTS_CSV, index=False)
     print(f"\nDone. {len(out)} model-scorings, {out['calib_date'].nunique()} calib dates, "
           f"{(time.time()-t_start)/60:.1f}min", flush=True)
 

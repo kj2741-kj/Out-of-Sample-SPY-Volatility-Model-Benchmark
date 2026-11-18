@@ -1,13 +1,15 @@
 # Out-of-Sample SPY Volatility Model Benchmark — Final Report
 
 **Nine option-pricing models, calibrated on real SPY option chains (2010–2025) and compared
-out-of-sample.** 23.5M raw contract quotes · 192 monthly calibration dates · 555 out-of-sample
-date-horizon cells per model (~8,300 contract prices each), 4,959 model-cells in total.
+out-of-sample.** 23.5M raw contract quotes · 192 monthly calibration dates · 573 out-of-sample
+date-horizon cells, 8,583 contract scorings per model (7,828 priced by all eight ranked models).
 
-> **All results in this document are post-audit.** A cross-phase consistency audit found five
-> issues, fixed all of them, and every number here was regenerated afterwards from
-> `results/phase9_oos_scores.csv`. The audit is documented in full in §3.1 — including the two
-> that were caught only by accident.
+> **Two audits.** The first (2026-08-09, §3.1) found five cross-phase issues. The second
+> (2026-11-18, §3.2) found that the headline statistic was not an RMSE, that the fair subset let
+> local volatility skip hard contracts, corrupt quotes in the scoring grid, and a year-boundary
+> bug. §5 and §7 carry the corrected figures from `results/phase9_oos_contracts.csv`. The
+> per-model results tables in §6 still show the first-audit statistic (n-weighted mean of
+> per-cell RMSE) for the calibration and robustness detail; use §5 for any comparison.
 
 > **How to read this document.** §1–§4 are methodology (data, shared infrastructure,
 > experimental design). §5 is the comparative results table — the summary. §6 is the core of the
@@ -168,6 +170,43 @@ gap from 0.013 to 0.030. That ordering is now better supported than before the a
 
 ---
 
+## 3.2 Second audit (2026-11-18)
+
+Run with the logic-audit checklist: read the code end to end, test each claim against an
+independent reference, rerun. Phase 9 was rerun from scratch afterwards, now saving every
+contract price (8,583 scorings per model) to `results/phase9_oos_contracts.csv`.
+
+1. **The headline "RMSE" was not an RMSE.** `phase10_analysis.weighted()` took an n-weighted mean of
+   per-cell RMSEs. Pooled RMSE, `sqrt(mean of squared errors)`, is larger for every model (BSM 2.25
+   vs 1.75 on the old data) and changed the order of the middle three. Now reported throughout.
+2. **The fair subset was defined by cell presence, not by contract.** LocalVol was "present" in
+   cells where it priced fewer contracts: 182 skipped, concentrated in hard cells (BSM's error
+   there 2.97 vs 1.61 elsewhere). The like-for-like set is now contracts priced by all eight ranked
+   models. This is the Andreasen-Huge failure mode (§6.7) on a smaller scale, missed by the same
+   row-level check.
+3. **Corrupt quotes in the scoring grid.** Three quotes below intrinsic value (2019) and, on
+   2019-02-14, call prices carried in put rows (a 247 put at $28.05 next to a 249 put at $0.40,
+   SPY 274), each scored against every model. Fixed with an American no-arbitrage bound and a
+   vertical-spread monotonicity filter (`phase9_oos_scoring.py`); 0.067% of candidate quotes
+   removed, 8 grid contracts replaced. 2019 pooled RMSE for LocalVol fell from 2.53 to 0.54.
+4. **Year-boundary bug.** Future scoring dates were searched only within the calibration year, so
+   every December 21-day horizon was skipped. 18 cells recovered (555 to 573).
+5. **Shared error floor (design limit, not fixed).** Calibration targets vendor IVs; scoring uses
+   mids under this project's rate and flat dividend. Black-Scholes at each contract's own same-day
+   vendor IV misses the mid by 0.485 pooled (2014-25: 0.560, 2010-13: 0.142). Recalibrating every
+   model to IVs implied from mids would remove it.
+6. **Calibration rates (design limit, not fixed).** The first audit aligned rates at scoring only;
+   SABR, Merton and constant-vol calibration still use the flat 3-month rate (up to about 6 bp
+   away from the curve at scored tenors).
+7. **Reproducibility.** Data files written by pyarrow 24 could not be read by the installed
+   pyarrow 19; rewritten, verified identical through DuckDB, originals in `backups/`.
+8. **Claim corrections.** "Behind 62% of its RMSE" for the SABR forward bug measured the mean price
+   shift ($0.55-0.58 on a 45-point probe) relative to RMSE, not the share of error it caused; the
+   first audit's own figures show SABR's OOS statistic moving only 0.937 to 0.930 after the fix.
+   "Smile models halve the error" holds for median error, not for pooled RMSE (about a third).
+
+Tests: `tests/test_scoring.py`, 13 checks; the 2019-02-14 check fails on the pre-fix run.
+
 ## 4. Metrics
 
 | Metric | Definition | Interpretation |
@@ -180,48 +219,63 @@ gap from 0.013 to 0.030. That ordering is now better supported than before the a
 
 ## 5. Comparative results (summary)
 
-### Headline: out-of-sample accuracy, n-weighted across all horizons and dates
+All figures are pooled RMSE in dollars on the 7,828 contracts priced by all eight ranked models
+(corrected statistic, §3.2), unless stated.
 
-| Rank | Model | RMSE | vega-RMSE | % in spread | Contracts scored | Coverage |
-|---|---|---|---|---|---|---|
-| 1 | **Local Volatility (Dupire)** | **0.603** | 8.73 | 6.57 | 7,578 | 91.1% |
-| 2 | SABR | 0.930 | 21.46 | 5.02 | 8,315 | 100% |
-| 3 | Heston | 0.960 | 21.60 | 3.58 | 8,307 | 99.9% |
-| 4 | Merton Jump-Diffusion | 0.993 | 22.32 | 4.73 | 8,315 | 100% |
-| 5 | GBM Monte Carlo | 1.742 | 25.43 | 1.92 | 8,315 | 100% |
-| 6 | CRR American | 1.750 | 25.67 | 1.91 | 8,315 | 100% |
-| 7 | Black-Scholes-Merton | 1.752 | 25.52 | 1.83 | 8,315 | 100% |
-| 8 | Black-76 | 1.752 | 25.52 | 1.83 | 8,315 | 100% |
-| — | *Andreasen-Huge* | *0.878* | *2.08* | *3.94* | *4,211* | *50.6% — **excluded, §6.7*** |
+### Headline
 
-### Fair subset — date-horizon cells where every model produced a price (514 of 555)
-LocalVol **0.587** · AH 0.836 · SABR 0.867 · Heston 0.900 · Merton 0.942 · GBM-MC 1.697 ·
-CRR 1.704 · BSM/Black-76 1.706. **Ranking unchanged**, so it is not an artifact of differing
-coverage.
+| Model | Pooled RMSE ($) | Median abs error ($) | vs Black-Scholes (pooled) |
+|---|---|---|---|
+| Local Volatility (Dupire) | **0.864** | **0.254** | -54% |
+| Merton Jump-Diffusion | 1.233 | 0.427 | -35% |
+| Heston | 1.256 | 0.391 | -33% |
+| SABR | 1.290 | 0.342 | -32% |
+| GBM Monte Carlo | 1.879 | 0.948 | -1% |
+| CRR American | 1.883 | 0.968 | 0% |
+| Black-Scholes-Merton | 1.889 | 0.961 | |
+| Black-76 | 1.889 | 0.961 | |
+| *Reference: Black-Scholes at each contract's own same-day vendor IV* | *0.485* | *0.146* | *floor, not a model* |
+
+7,828 contracts priced by all eight ranked models (91.2% of 8,583 scorings, 573 date-horizon
+cells, 192 calibration dates). Andreasen-Huge prices 50.5% of the grid, the hard half missing,
+and is excluded (report section 6.7).
+
+Uncertainty, bootstrapping calibration dates (2,000 resamples): LocalVol 0.66-1.12, SABR
+1.02-1.60, Heston 1.03-1.51, Merton 1.06-1.41, BSM 1.74-2.04. LocalVol beats every other model in
+all resamples. SABR, Heston and Merton differences all straddle zero: **statistically tied**.
+Reductions against BSM: LocalVol 43-63%, Merton 29-41%, Heston 23-42%, SABR 19-43%.
+
+Head to head on the same contracts: LocalVol beats SABR on 62% of contracts and 70% of cells, BSM
+on 85% and 98%; Merton beats BSM on 73% and 95%.
+
+Each model on its own coverage (not comparable across models with gaps): LocalVol 0.864 on 91.3%,
+Andreasen-Huge 1.285 on 50.5% (other models on AH's contracts: LocalVol 0.851, SABR 1.653,
+BSM 2.187).
 
 ### Decay by horizon
 
 | Model | h=5d | h=10d | h=21d | Degradation |
 |---|---|---|---|---|
-| Local Vol | 0.492 | 0.568 | 0.835 | +70% |
-| SABR | 0.692 | 0.874 | 1.248 | +80% |
-| Heston | 0.730 | 0.891 | 1.282 | +75% |
-| Merton | 0.814 | 0.934 | 1.248 | +53% |
-| *Andreasen-Huge* | *0.764* | *0.751* | *1.023* | *+34%* |
-| BSM family | ~1.57 | ~1.68 | ~2.02 | +28% |
+| Local Vol | 0.779 | 0.813 | 0.992 | +27% |
+| SABR | 1.017 | 1.369 | 1.453 | +43% |
+| Heston | 1.022 | 1.315 | 1.408 | +38% |
+| Merton | 1.067 | 1.290 | 1.330 | +25% |
+| BSM | 1.780 | 1.911 | 1.975 | +11% |
+| *Reference floor* | *0.477* | *0.490* | *0.488* | |
 
-### Era split (OOS RMSE)
+### Era split
 
-| Model | OptionsDX 2010–13 | AlphaVantage 2014–25 |
+| Model | OptionsDX 2010-13 | AlphaVantage 2014-25 |
 |---|---|---|
-| Local Vol | 0.286 | 0.748 |
-| SABR | 0.410 | 1.100 |
-| Heston | 0.432 | 1.132 |
-| Merton | 0.436 | 1.175 |
-| BSM | 0.832 | 2.052 |
+| Local Vol | 0.326 | 0.989 |
+| SABR | 0.490 | 1.476 |
+| Heston | 0.508 | 1.434 |
+| Merton | 0.504 | 1.406 |
+| BSM | 0.842 | 2.145 |
+| *Reference floor* | *0.142* | *0.560* |
 
-Worst years for every model: **2020 (COVID)** and **2025**. Calmest: 2010 and 2013. Full per-year
-table in `results/phase10_summary_tables.txt`.
+Worst years for every model: 2020 (COVID), 2022 and 2025. Full per-year table in
+`results/phase10_summary_tables.txt`.
 
 ---
 
@@ -263,7 +317,8 @@ wasn't scorable until Phase 9. Caught while building the scoring harness.
 ### What it teaches
 This is the **baseline the whole project is measured against**. Its 4.03pp in-sample error is not
 a failure — it is the honest cost of assuming a flat volatility surface, and quantifying that cost
-is precisely why it is included. Every smile-aware model roughly halves its OOS error.
+is precisely why it is included. Every smile-aware model cuts its OOS error by a third or more
+(pooled RMSE, §5).
 
 Its **slowest percentage decay (+28%)** is a subtle point: it is already so wrong at 5 days that
 three more weeks barely worsens it proportionally. Slow decay is not a virtue here.
@@ -591,9 +646,10 @@ research-level problem, deliberately not attempted for one of nine models.
 
 ### What it teaches
 **The most accurate model tested, and the least robust to build** — those two facts together are
-arguably the most useful output of the study. It wins in every year and both eras, and its win
+arguably the most useful output of the study. It is best in 15 of 16 years (Heston edged it in 2017) and in both eras, and its win
 survives the fair-subset check. But getting there required diagnosing two separate
-arbitrage/interpolation bugs, and it still fails outright on 7% of dates.
+arbitrage/interpolation bugs, and it still fails outright on about 6% of dates (12 of 192 in the
+2026-11-18 rerun; 13 at Phase 7 build time).
 
 For a production system that trade-off may well favour SABR (rank 2, 960/960 fits in 18 seconds,
 100% coverage).
@@ -654,7 +710,9 @@ intended.
 ### What it teaches
 **The most economically interpretable model of the nine.** Its parameters map onto real, nameable
 quantities — how often crashes happen, how big, in which direction — and those parameters
-independently recovered the timing of COVID and the 2022 hiking cycle.
+reacted to COVID and the 2022 hiking cycle: the jump intensity rose to its 5.0 cap on 2020-03-16
+and 2020-04-15 (with jump-size volatility near zero, so a bound, not a clean estimate), and its
+2022 median (0.56) sat above the neighbouring years (0.35 in 2021, 0.21 in 2023).
 
 Its **slowest decay among ranked smile models (+53%)** is consistent with that interpretation: jump
 parameters encode slow-moving tail-risk beliefs rather than fast-moving spot-vol dynamics, so they
@@ -667,34 +725,34 @@ more than its rank-4 headline number.
 
 # 7. Cross-model analysis
 
-**The headline finding.** Every model capturing the volatility smile roughly **halves** the
-out-of-sample pricing error of the constant-volatility family (~0.60–0.99 vs ~1.75). Large,
-consistent across all 16 years, and it survives the fair-subset cut. **Modelling the smile is not
-a refinement — it is most of the accuracy.**
+**The headline finding.** Every model capturing the volatility smile beats the constant-volatility
+family clearly: pooled RMSE 0.86-1.29 against 1.89, a cut of about a third (more than half for
+local volatility), and 59-74% on median error. It holds in every bootstrap resample and in every
+year for local volatility, Heston and Merton; SABR was marginally worse than BSM in 2020 (2.90 vs 2.87). **Modelling the smile is most of the accuracy.**
 
 **Four constant-vol pricers agreeing to three decimals is validation, not redundancy.** Black-76
 *is* BSM on the forward; GBM-MC *is* BSM simulated; CRR adds an early-exercise premium worth
 almost nothing on a low-dividend index. Four independent implementations landing on 1.742–1.752
 says the plumbing is sound.
 
-**Sophisticated models decay faster in percentage terms** (53–80% vs 28%) — counterintuitive but
-not a defect. They start from a far lower base. **The ranking never inverts in absolute terms:**
-Local Vol at 21 days (0.835) still beats BSM at 5 days (1.572).
+**Sophisticated models decay faster in percentage terms** (25-43% vs 11%). They start from a far
+lower base. **The ranking never inverts in absolute terms:** Local Vol at 21 days (0.992) still
+beats BSM at 5 days (1.780).
 
-**The era effect is real, not a model artifact.** Every model finds 2014–25 roughly 2.5× harder.
-The same ordering appeared independently in the *in-sample* fits of Heston, SABR **and**
-Andreasen-Huge, and again in OOS scores — four independent measurements agreeing. Attributable to
-more expiries, more strikes, wider quote dispersion, and the 0DTE era.
+**The era effect is largely a data-convention effect.** Every model finds 2014-25 about 2.5-3x
+harder, but so does the reference that knows each contract's own same-day vendor IV (0.560 vs
+0.142, 3.9x). The later vendor's IVs reprice the mid less well under this project's rate and
+dividend assumptions. A genuinely harder market may contribute; this design cannot separate the
+two (§3.2 item 5).
 
-**Parsimony is underrated.** Heston (5 params) and SABR (15 params) finish 0.030 apart
-out-of-sample, against a ~0.8 gap to the constant-vol family. Tripling the parameter count bought
-close to nothing once you stop scoring in-sample — which is the entire argument for out-of-sample
-evaluation. (Pre-audit the gap was 0.013; correcting SABR's forward widened it, so the ordering is
-now more robust than it was, not less — §3.1.)
+**Parsimony is underrated.** Heston (5 params) and SABR (15 params) are statistically tied
+out-of-sample (1.256 vs 1.290, bootstrap difference straddles zero), against a ~0.6 gap to the
+constant-vol family. Tripling the parameter count bought nothing measurable once scoring is
+out-of-sample, which is the argument for out-of-sample evaluation.
 
-**Accuracy and robustness are in tension.** Ranked by accuracy: Local Vol > SABR > Heston >
-Merton. Ranked by robustness: SABR (960/960, 18 s) > Merton ≈ Heston (188/192, hours) > Local Vol
-(179/192, two bug hunts). The two orderings are nearly reversed.
+**Accuracy and robustness are in tension.** Ranked by accuracy: Local Vol first, then SABR,
+Heston and Merton tied. Ranked by robustness: SABR (960/960, 18 s) > Merton ≈ Heston (188/192, hours) > Local Vol
+(180/192 in the rerun, two bug hunts). The two orderings are nearly reversed.
 
 ---
 
@@ -711,7 +769,8 @@ Merton. Ranked by robustness: SABR (960/960, 18 s) > Merton ≈ Heston (188/192,
   *comparison* is unaffected; absolute price levels carry this error.
 - **Vasicek `a` and `b` are not individually identified** — only the discount curve is validated.
 - **Heston's κ clusters bimodally** near {2.0, 5.0}; do not read it as a mean-reversion estimate.
-- **Local Vol failed on 13/192 dates**; excluded from its sample only, not the others'.
+- **Local Vol failed on 12/192 dates in the rerun (13 at build time)**; excluded from its sample
+  only, and its partial gaps on 49 more dates are why the like-for-like set is contract-level (§3.2).
 - **Merton's λ hit its 5.0 bound on at least one date** — a floor, not a fit.
 - **SABR's β fixed at 1.0**, sensitivity not tested.
 - **Single underlying, single asset class.** SPY only; nothing generalises automatically to single
@@ -727,8 +786,9 @@ Merton. Ranked by robustness: SABR (960/960, 18 s) > Merton ≈ Heston (188/192,
 
 ## Conclusion
 **Smile-aware models (Local Volatility, SABR, Heston, Merton) cut out-of-sample SPY option pricing
-error roughly in half versus constant-volatility Black-Scholes. Local Volatility is the most
-accurate of the nine but the least numerically robust to build, failing outright on 7% of dates —
+error clearly versus constant-volatility Black-Scholes: by about a third on pooled RMSE, by more
+than half for local volatility, and by 59-74% on median error. Local Volatility is the most
+accurate of the nine but the least numerically robust to build, failing outright on about 6% of dates —
 accuracy and robustness point in opposite directions.**
 
 Three secondary conclusions worth carrying forward:
@@ -738,7 +798,7 @@ Three secondary conclusions worth carrying forward:
 2. **Silent failure is the dangerous failure mode.** Andreasen-Huge nearly earned a top ranking on
    a systematically easier half of the data because it omitted rather than errored.
 3. **Model parameters carry real economic information.** Merton's jump intensity independently
-   recovered COVID and the 2022 hiking cycle; Heston's v₀ matched intraday VIX during the crash.
+   rose to its cap in March-April 2020 and was elevated in 2022; Heston's v₀ matched intraday VIX during the crash.
 
 ## Build log
 | Phase | Deliverable | Result |

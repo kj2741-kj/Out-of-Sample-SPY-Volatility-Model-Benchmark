@@ -1,117 +1,126 @@
 """
-Phase 10: turn Phase 9's raw OOS scorings into the final result tables.
+Phase 10: final result tables from Phase 9's per-contract out-of-sample prices.
 
-Produces:
- 1. Headline ranking by horizon (RMSE, vega-RMSE, n) -- the main deliverable
- 2. Decay curve: how each model degrades from h=5 -> 10 -> 21 days
- 3. Era split (OptionsDX 2010-13 vs AlphaVantage 2014-25), kept separate throughout per the
-    standing project rule
- 4. Regime split: calm vs stressed periods (by realized market vol proxy)
- 5. Coverage table (n per model) -- ESSENTIAL for honesty: AH_Surface silently drops contracts
-    it can't price (Phase 6/9 finding), so its RMSE is on an easier subset and is NOT directly
-    comparable. Any ranking must be read alongside coverage.
+AUDIT REWRITE (2026-11-18). The earlier version worked from per-cell aggregates and had three
+problems, all fixed here:
+ 1. Its "RMSE" was an n-weighted MEAN of per-cell RMSEs, not an RMSE. The pooled RMSE,
+    sqrt(mean of squared errors over all contracts), is reported now; the old statistic is
+    kept in one column only for comparison with earlier write-ups.
+ 2. Its "fair subset" required each model to be PRESENT in a cell, not to price every contract
+    in it. LocalVol skipped 182 contracts inside such cells, mostly in hard cells, which
+    flattered it. The like-for-like set is now defined per CONTRACT: priced by all eight
+    ranked models.
+ 3. Decay, era and year tables used an unweighted mean of cell RMSEs while the headline used a
+    weighted one. Every table now uses pooled RMSE on the same like-for-like contracts.
+
+Andreasen-Huge stays out of the ranking (it prices about half the grid, the hard half missing)
+and is reported on its own coverage only.
+
+Reference row: Oracle_VendorIV = Black-Scholes at each contract's own same-day vendor IV. It is
+not a model; its error is the floor every model inherits because calibration targets vendor IVs
+while scoring uses mids.
 """
 import numpy as np
 import pandas as pd
 
 PROJ = r"C:\Users\Kartavya\Desktop\NYU\Summer\Options Model Validation"
+RANKED = ["LocalVol", "SABR", "Heston", "Merton", "GBM_MC", "CRR_American", "BSM", "Black76"]
+EXCLUDED = ["AH_Surface"]
+REFERENCE = "Oracle_VendorIV"
 
-MODEL_ORDER = ["BSM", "Black76", "GBM_MC", "CRR_American", "Heston", "SABR",
-               "Merton", "AH_Surface", "LocalVol"]
+
+def pooled_rmse(err):
+    err = np.asarray(err, dtype=float)
+    err = err[np.isfinite(err)]
+    return float(np.sqrt(np.mean(err ** 2))) if len(err) else np.nan
 
 
 def load():
-    df = pd.read_csv(f"{PROJ}\\results\\phase9_oos_scores.csv")
-    # AUDIT FIX (2026-08-09): a resumed Phase 9 run appends rows whose dates serialise WITH a
-    # " 00:00:00" suffix while the original rows have none. Inferred-format parsing then raises
-    # and Phase 10 dies silently behind a redirect, leaving a STALE tables file that looks valid.
-    # format="mixed" handles both spellings.
-    df["calib_date"] = pd.to_datetime(df["calib_date"], format="mixed")
-    df["score_date"] = pd.to_datetime(df["score_date"], format="mixed")
-    df["year"] = df["calib_date"].dt.year
-    df["era"] = np.where(df["year"] <= 2013, "OptionsDX(2010-13)", "AlphaVantage(2014-25)")
-    return df[df["n"] > 0]
+    c = pd.read_csv(f"{PROJ}\\results\\phase9_oos_contracts.csv")
+    c["calib_date"] = pd.to_datetime(c["calib_date"], format="mixed")
+    c["score_date"] = pd.to_datetime(c["score_date"], format="mixed")
+    c["year"] = c["calib_date"].dt.year
+    c["era"] = np.where(c["year"] <= 2013, "OptionsDX 2010-13", "AlphaVantage 2014-25")
+    for m in RANKED + EXCLUDED + [REFERENCE]:
+        if m in c:
+            c[f"err_{m}"] = c[m] - c["mid"]
+    return c
 
 
-def weighted(df, col):
-    """n-weighted mean -- rows with more scored contracts should count more, and it makes the
-    AH_Surface coverage gap explicit rather than letting a thin row carry equal weight."""
-    return df.groupby("model").apply(
-        lambda g: np.average(g[col], weights=g["n"]), include_groups=False)
+def like_for_like(c):
+    """Contracts priced by every ranked model."""
+    return c[c[RANKED].notna().all(axis=1)].copy()
+
+
+def table(c, models, by=None):
+    cols = models + [REFERENCE]
+    if by is None:
+        return pd.Series({m: pooled_rmse(c[f"err_{m}"]) for m in cols})
+    return c.groupby(by).apply(lambda g: pd.Series({m: pooled_rmse(g[f"err_{m}"]) for m in cols}),
+                               include_groups=False).T
 
 
 def main():
-    df = load()
-    print(f"{len(df)} model-scoring rows, {df['calib_date'].nunique()} calibration dates, "
-          f"{df['model'].nunique()} models\n")
+    c = load()
+    n_all = len(c)
+    lfl = like_for_like(c)
+    out = []
 
-    # 1. Headline: overall + per horizon
-    print("=" * 78)
-    print("HEADLINE: out-of-sample accuracy (params frozen at t, scored at t+h)")
-    print("=" * 78)
-    tbl = pd.DataFrame({
-        "RMSE": weighted(df, "rmse"),
-        "vega_RMSE": weighted(df, "vega_rmse"),
-        "pct_in_spread": weighted(df, "pct_in_spread"),
-        "total_contracts_scored": df.groupby("model")["n"].sum(),
-        "coverage_%": df.groupby("model")["n"].sum() / df.groupby("model")["n"].sum().max() * 100,
-    }).reindex(MODEL_ORDER).dropna(how="all")
-    print(tbl.round(3).to_string())
+    def emit(title, obj):
+        text = f"\n{'=' * 78}\n{title}\n{'=' * 78}\n{obj if isinstance(obj, str) else obj.to_string()}"
+        print(text)
+        out.append(text)
 
-    # 2. Decay curve
-    print("\n" + "=" * 78)
-    print("DECAY: RMSE by horizon (does the calibration hold up as time passes?)")
-    print("=" * 78)
-    decay = df.pivot_table(index="model", columns="horizon", values="rmse",
-                            aggfunc=lambda x: np.mean(x)).reindex(MODEL_ORDER).dropna(how="all")
-    decay.columns = [f"h={c}d" for c in decay.columns]
-    if "h=5d" in decay and "h=21d" in decay:
-        decay["degradation_%"] = (decay["h=21d"] / decay["h=5d"] - 1) * 100
-    print(decay.round(3).to_string())
+    emit("SAMPLE",
+         f"{n_all:,} contract scorings, {c.groupby(['calib_date', 'horizon']).ngroups} date-horizon cells, "
+         f"{c['calib_date'].nunique()} calibration dates.\n"
+         f"Like-for-like set (priced by all 8 ranked models): {len(lfl):,} contracts "
+         f"({len(lfl) / n_all:.1%}).")
 
-    # 3. Era split
-    print("\n" + "=" * 78)
-    print("ERA SPLIT (kept separate throughout the project)")
-    print("=" * 78)
-    era = df.pivot_table(index="model", columns="era", values="rmse",
-                          aggfunc="mean").reindex(MODEL_ORDER).dropna(how="all")
-    print(era.round(3).to_string())
+    cov = pd.DataFrame({
+        "pooled_RMSE_own_coverage": [pooled_rmse(c[f"err_{m}"]) for m in RANKED + EXCLUDED],
+        "contracts_priced": [int(c[m].notna().sum()) for m in RANKED + EXCLUDED],
+    }, index=RANKED + EXCLUDED)
+    cov["coverage_%"] = cov["contracts_priced"] / n_all * 100
+    emit("EACH MODEL ON ITS OWN COVERAGE (not comparable across models with <100% coverage)",
+         cov.round(3))
 
-    # 4. Regime split by year (proxy for calm vs stressed)
-    print("\n" + "=" * 78)
-    print("BY YEAR (RMSE) -- watch 2020 (COVID) and 2022 (rate hikes)")
-    print("=" * 78)
-    byyear = df.pivot_table(index="year", columns="model", values="rmse", aggfunc="mean")
-    byyear = byyear.reindex(columns=[m for m in MODEL_ORDER if m in byyear.columns])
-    print(byyear.round(3).to_string())
+    head = pd.DataFrame({
+        "pooled_RMSE": table(lfl, RANKED),
+        "median_abs_err": pd.Series({m: float(lfl[f"err_{m}"].abs().median()) for m in RANKED + [REFERENCE]}),
+        "mean_abs_err": pd.Series({m: float(lfl[f"err_{m}"].abs().mean()) for m in RANKED + [REFERENCE]}),
+        "bias": pd.Series({m: float(lfl[f"err_{m}"].mean()) for m in RANKED + [REFERENCE]}),
+        "old_stat_mean_of_cell_RMSE": pd.Series({
+            m: float(lfl.groupby(["calib_date", "horizon"]).apply(
+                lambda g: np.sqrt(np.mean(g[f"err_{m}"] ** 2)), include_groups=False).mean())
+            for m in RANKED + [REFERENCE]}),
+    })
+    head["vs_BSM_%"] = (head["pooled_RMSE"] / head.loc["BSM", "pooled_RMSE"] - 1) * 100
+    emit("HEADLINE: like-for-like contracts, pooled RMSE in $ (Oracle_VendorIV = reference floor, not a model)",
+         head.round(3))
 
-    # 5. Fair-comparison subset: only contracts/rows where EVERY model produced a price
-    print("\n" + "=" * 78)
-    print("FAIR SUBSET: calib_date+horizon cells where ALL models scored (removes AH's")
-    print("survivorship advantage -- this is the honest apples-to-apples ranking)")
-    print("=" * 78)
-    cell = df.groupby(["calib_date", "horizon"])["model"].nunique()
-    full_cells = set(cell[cell == df["model"].nunique()].index)
-    fair = df[df.set_index(["calib_date", "horizon"]).index.isin(full_cells)]
-    if len(fair):
-        fair_tbl = pd.DataFrame({
-            "RMSE": weighted(fair, "rmse"),
-            "vega_RMSE": weighted(fair, "vega_rmse"),
-            "n_cells": fair.groupby("model").size(),
-        }).reindex(MODEL_ORDER).dropna(how="all").sort_values("RMSE")
-        print(fair_tbl.round(3).to_string())
-        print(f"\n({len(full_cells)} of {len(cell)} date-horizon cells have all models present)")
-    else:
-        print("No cells with all models present.")
+    emit("DECAY BY HORIZON (pooled RMSE, like-for-like)", table(lfl, RANKED, by="horizon").round(3))
+    emit("ERA SPLIT (pooled RMSE, like-for-like)", table(lfl, RANKED, by="era").round(3))
+    emit("BY YEAR (pooled RMSE, like-for-like)", table(lfl, RANKED, by="year").round(3))
 
-    with open(f"{PROJ}\\results\\phase10_summary_tables.txt", "w") as f:
-        f.write("HEADLINE\n" + tbl.round(3).to_string())
-        f.write("\n\nDECAY\n" + decay.round(3).to_string())
-        f.write("\n\nERA\n" + era.round(3).to_string())
-        f.write("\n\nBY YEAR\n" + byyear.round(3).to_string())
-        if len(fair):
-            f.write("\n\nFAIR SUBSET\n" + fair_tbl.round(3).to_string())
-    print(f"\nSaved -> results/phase10_summary_tables.txt")
+    pairs = []
+    for a, b in [("LocalVol", "SABR"), ("LocalVol", "Heston"), ("LocalVol", "BSM"),
+                 ("SABR", "Heston"), ("Heston", "Merton"), ("SABR", "Merton"), ("Merton", "BSM")]:
+        win_c = float((lfl[f"err_{a}"].abs() < lfl[f"err_{b}"].abs()).mean() * 100)
+        cells = lfl.groupby(["calib_date", "horizon"]).apply(
+            lambda g: pooled_rmse(g[f"err_{a}"]) < pooled_rmse(g[f"err_{b}"]), include_groups=False)
+        pairs.append(dict(pair=f"{a} beats {b}", contracts_pct=win_c, cells_pct=float(cells.mean() * 100)))
+    emit("HEAD TO HEAD (like-for-like): share of contracts and of date-horizon cells won",
+         pd.DataFrame(pairs).set_index("pair").round(1))
+
+    sub = c[c["AH_Surface"].notna()]
+    ah = pd.Series({m: pooled_rmse(sub[f"err_{m}"]) for m in ["AH_Surface", "LocalVol", "SABR", "BSM"]})
+    emit(f"ANDREASEN-HUGE, excluded: on the {len(sub):,} contracts it priced ({len(sub) / n_all:.1%}), "
+         "other models' pooled RMSE on the same contracts", ah.round(3))
+
+    with open(f"{PROJ}\\results\\phase10_summary_tables.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(out))
+    print("\nSaved -> results/phase10_summary_tables.txt")
 
 
 if __name__ == "__main__":
