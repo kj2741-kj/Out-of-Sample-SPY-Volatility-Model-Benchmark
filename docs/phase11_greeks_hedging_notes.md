@@ -11,17 +11,17 @@ Results: `results/phase11_contract_days.csv`, `phase11_part1_greeks.csv`, `phase
 - Panel: 7,196 contract-days, 355 contracts, 501 trading days; 6,818 consecutive-day hedge pairs (6,712 in 2020-21,
   the rest are early-January 2022 days of the December 2021 cohort).
 - Models: BS at the contract's own same-day vendor IV (BS_market, sticky-strike benchmark), BS at the frozen calibrated
-  sigma (BS_calib), SABR (beta 1, nearest slice) and Merton, both by spot bump-and-reprice (0.5%).
+  sigma (BS_calib), SABR (beta 1, nearest slice) and Merton, both by spot bump-and-reprice (0.5%), and true Dupire
+  local vol (Phase 12 surface, FD engine delta and gamma).
 - Hedge error, long one option, short delta shares, cash at r: e = dV - delta*(dS + qS dt) - r(V - delta S)dt, V = mid.
   Gain vs BS_market = 1 - SSE(model)/SSE(BS_market). 95% intervals: cluster bootstrap over calibration dates.
 - P&L explain: day-0 BS Greeks at vendor IV; steps delta, +gamma, +vega (own IV change), +theta.
 
-## Local volatility excluded (bug found in Phases 7 and 9)
-`FdBlackScholesVanillaEngine` was built without `localVol=True`. QuantLib then prices with the Black vol at the strike,
-so the "LocalVol" and "AH_Surface" models were frozen implied-vol surfaces read by strike (sticky strike), not Dupire.
-On 2020-01-15 the "LocalVol" price equals BS at the surface IV to four decimals. With the flag on, the Dupire surface
-as built fails on 3-4 of 15 grid contracts and misprices its own calibration date (RMSE 0.40 vs 0.18; 1.23 vs 0.36 on
-2021-06-15). Phase 9's numbers are valid for a frozen sticky-strike surface; the label is wrong. Not yet fixed.
+## Local volatility (bug found here, fixed in Phase 12)
+The first Phase 11 run excluded local vol: Phases 7 and 9 built `FdBlackScholesVanillaEngine` without
+`localVol=True`, so their "LocalVol" was a frozen sticky-strike surface (its delta equals BS_market). After
+the Phase 12 rebuild (`src/phase12_dupire.py`) Phase 11 was rerun with true Dupire local vol, frozen in
+calendar time. The other models' numbers did not change.
 
 ## Results
 **Part 1, Greeks.** SABR and Merton deltas sit above the market BS delta: ATM by +0.11/+0.08 (2020) and +0.13/+0.12
@@ -39,6 +39,14 @@ in-sample regression), as Hull and White (2017) report for index options, so the
 SABR and Merton move delta up. The penalty is present in the first week after calibration (SABR -0.62, Merton -0.45,
 BS_calib -0.05), so it is structural, not only stale parameters. SABR rho sits at its -0.999 bound on 4% of slices;
 excluding that date does not change the result.
+
+**Local vol (true Dupire).** Deltas sit 0.12-0.14 below the market BS delta (ATM and OTM puts; OTM calls
+-0.05 to -0.07); gamma on OTM puts about 1.8-2.2x BS. Gain vs BS_market -0.33 (CI -1.03 to -0.01): better
+than SABR and Merton, worse than BS_market; in the March-April 2020 stress it ties (+0.003). Local vol moves
+delta the right way but about three times too far. Least-squares blend
+delta = BS_market + w (LocalVol - BS_market): w = 0.32 in 2020, 0.32 in 2021, 0.50 in the stress window,
+0.24 outside it (in sample; SSE cut 6-20%). Read: realised SPY smile dynamics sat about a third of the way
+from sticky strike to sticky local vol, closer to local vol in the crash.
 
 **Part 3, P&L explain.** Unexplained share of daily option P&L (mean |actual - predicted| / mean |actual|):
 delta 31.1%, +gamma 29.1%, +vega 11.7%, +theta 4.9% (Spearman 0.943 to 0.996). Vega is the largest step. Gamma helps

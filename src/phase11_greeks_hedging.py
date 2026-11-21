@@ -21,7 +21,8 @@ Models (Heston deliberately left out of this phase):
   SABR       nearest calibrated expiry slice (as Phase 9); delta by spot bump with the forward
              moving and SABR parameters fixed (so the smile moves with the forward).
   Merton     frozen (sigma, lambda, mu_j, sigma_j); delta by spot bump.
-  (LocalVol switched off, see USE_LOCALVOL below.)
+  LocalVol   TRUE Dupire (Phase 12 surface from the frozen SABR slices, localVol=True), the same
+             function of (S, calendar time) as at t; delta and gamma from the FD engine.
 
 Part 2 hedge error for one day, long 1 option, short delta shares, cash account at r:
   e = (V1 - V0) - delta0 * (S1 - S0 + q*S0*dt) - r0 * (V0 - delta0*S0) * dt
@@ -47,7 +48,7 @@ from phase9_oos_runner import tenor_rate, load_all_params
 from pricers import bs_price
 from sabr import sabr_iv, BETA
 from merton import merton_price_batch
-from phase7_local_vol import build_local_vol_surface
+from phase12_dupire import DupireSurface, price_lv
 
 YEARS = (2020, 2021)
 TRACK_DAYS = 21
@@ -56,11 +57,10 @@ BUMP = 0.005
 PDE_GRID = 200
 OUT_ROWS = f"{PROJ}\\results\\phase11_contract_days.csv"
 OUT_SUMMARY = f"{PROJ}\\results\\phase11_summary.txt"
-MODELS = ["BS_market", "BS_calib", "SABR", "Merton"]
-# LocalVol is OFF: Phase 7/9 never passed localVol=True to the FD engine, so that model was a
-# frozen sticky-strike surface (its delta equals BS_market); true Dupire as built fails to
-# reprice its own surface. See docs/phase11_greeks_hedging_notes.md.
-USE_LOCALVOL = False
+MODELS = ["BS_market", "BS_calib", "SABR", "Merton", "LocalVol"]
+# History: Phase 7/9 never passed localVol=True, so the old 'LocalVol' was a frozen sticky-strike
+# surface. Phase 11 first ran without LocalVol; it now uses the Phase 12 Dupire build.
+USE_LOCALVOL = True   # Phase 12 Dupire (phase12_dupire.py), localVol=True, frozen in calendar time
 
 
 def bs_greeks(S, K, T, r, q, sig, is_call):
@@ -113,14 +113,15 @@ def main(limit=None):
         p_cv = cv[cv["date"] == t].iloc[0]
         p_me = me[me["date"] == t].iloc[0]
         p_sa = sa[sa["date"] == t]
-        lv_ok = USE_LOCALVOL and (t not in lv_bad)
+        lv_ok = USE_LOCALVOL
         if lv_ok:
             try:
-                lv_surface, lv_black_var, _, _, _ = build_local_vol_surface(t, df_t, vas, vas_params)
-                lv_bv = ql.BlackVolTermStructureHandle(lv_black_var)
-                lv_lv = ql.LocalVolTermStructureHandle(lv_surface)
+                _, _, _, rts_t, _ = build_curves(t, vas.loc[vas["date"] == t, "r3mo"].iloc[0], vas_params)
+                spot_t = float(df_t.loc[df_t["date"] == t, "spy_close"].iloc[0])
+                dup = DupireSurface(spot_t, lambda T, rr=rts_t: tenor_rate(rr, T), Q_DIV, p_sa.to_dict("records"))
+                mesh_v = dup.mesh_vol()
             except Exception as ex:
-                print(f"{t.date()} local vol build failed: {ex}", flush=True)
+                print(f"{t.date()} Dupire build failed: {ex}", flush=True)
                 lv_ok = False
         days = trade_dates[trade_dates >= np.datetime64(t)][: TRACK_DAYS + 1]
 
@@ -130,10 +131,8 @@ def main(limit=None):
             if r3.empty:
                 continue
             eval_d, _, _, rts, qts = build_curves(d, r3.iloc[0], vas_params)
-            spot_q = ql.SimpleQuote(1.0)
             if lv_ok:
-                proc = ql.GeneralizedBlackScholesProcess(ql.QuoteHandle(spot_q), qts, rts, lv_bv, lv_lv)
-                lv_engine = ql.FdBlackScholesVanillaEngine(proc, PDE_GRID, PDE_GRID)
+                lv_surf_d = dup.ql_surface(eval_d, shift=(d - t).days / 365.0)
             for c in grid.itertuples(index=False):
                 key = (c.contractID, d)
                 if key not in full.index:
@@ -175,12 +174,9 @@ def main(limit=None):
                 rec.update(price_Merton=p, delta_Merton=dl, gamma_Merton=gm_)
                 if lv_ok:
                     try:
-                        spot_q.setValue(S)
-                        exp_date = eval_d + ql.Period(int(round(T * 365)), ql.Days)
-                        opt = ql.VanillaOption(ql.PlainVanillaPayoff(ql.Option.Call if is_call else ql.Option.Put, K),
-                                               ql.EuropeanExercise(exp_date))
-                        opt.setPricingEngine(lv_engine)
-                        rec.update(price_LocalVol=opt.NPV(), delta_LocalVol=opt.delta(), gamma_LocalVol=opt.gamma())
+                        p, dl, gm_ = price_lv(lv_surf_d, S, rts, qts, eval_d, K, T, is_call, grid=PDE_GRID,
+                                              greeks=True, mesh_vol=mesh_v)
+                        rec.update(price_LocalVol=p, delta_LocalVol=dl, gamma_LocalVol=gm_)
                     except RuntimeError:
                         pass
                 rows.append(rec)

@@ -6,9 +6,15 @@ MV slope ATM       : extra delta -0.0388 per share; SSE cut vs BS_market 7.691% 
 MV slope OTM calls : extra delta -0.0172 per share; SSE cut vs BS_market 2.523% (in-sample, n=2614)
 mean delta SABR - BS_calib: +0.0551
 mean delta Merton - BS_calib: +0.0457
+mean delta LocalVol - BS_calib: -0.1403
 SABR slices 2020-21: 120, rho at -0.999 bound: 4.2%
 SABR gain vs BS_market excluding 1 calib dates with rho mostly at bound: -1.476 (n=6415)
-age  0- 7d n=2102: BS_calib -0.049, SABR -0.621, Merton -0.452
-age  8-15d n=1932: BS_calib -0.346, SABR -1.449, Merton -1.247
-age 16-35d n=2678: BS_calib -0.066, SABR -0.984, Merton -0.892
+age  0- 7d n=2102: BS_calib -0.049, SABR -0.621, Merton -0.452, LocalVol -0.587
+age  8-15d n=1932: BS_calib -0.346, SABR -1.449, Merton -1.247, LocalVol -0.099
+age 16-35d n=2678: BS_calib -0.066, SABR -0.984, Merton -0.892, LocalVol -0.265
 hedge RMSE BS_market 0.601; mean |dV| 1.021
+blend All      : weight on local-vol delta 0.32; SSE cut vs BS_market 9.1% (in-sample, n=6712)
+blend 2020     : weight on local-vol delta 0.32; SSE cut vs BS_market 6.3% (in-sample, n=3308)
+blend 2021     : weight on local-vol delta 0.32; SSE cut vs BS_market 20.1% (in-sample, n=3404)
+blend Stress   : weight on local-vol delta 0.50; SSE cut vs BS_market 12.2% (in-sample, n=682)
+blend Ex-stress: weight on local-vol delta 0.24; SSE cut vs BS_market 8.2% (in-sample, n=6030)

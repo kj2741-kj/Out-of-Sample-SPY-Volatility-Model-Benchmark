@@ -4,6 +4,13 @@
 out-of-sample.** 23.5M raw contract quotes · 192 monthly calibration dates · 573 out-of-sample
 date-horizon cells, 8,583 contract scorings per model (7,828 priced by all eight ranked models).
 
+> **Correction, 2026-11-20 (read first).** Every "Local Volatility (Dupire)" result in this report
+> (§5, §6.8, §7) is for a **sticky-strike surface**, not local volatility: the FD engine was built
+> without `localVol=True`, so it priced Black-Scholes at the frozen SABR-smoothed surface vol by
+> strike. The same applies to Andreasen-Huge (§6.7). The numbers are valid for that model; the label
+> is wrong. True Dupire local vol is in `docs/phase12_dupire_localvol_notes.md`: pooled RMSE 1.359
+> (-28% vs Black-Scholes) on the same 7,828 contracts, statistically close to SABR, Heston and Merton.
+>
 > **Two audits.** The first (2026-08-09, §3.1) found five cross-phase issues. The second
 > (2026-11-18, §3.2) found that the headline statistic was not an RMSE, that the fair subset let
 > local volatility skip hard contracts, corrupt quotes in the scoring grid, and a year-boundary

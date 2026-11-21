@@ -1,0 +1,43 @@
+GUARD: old like-for-like n=7828, 'LocalVol' 0.864, BSM 1.889 (published 7828 / 0.864 / 1.889)
+Dupire coverage: 8583 of 8583 contract-scorings (100.0%); calibration dates 192; mean guarded-node share 0.54%
+
+LIKE-FOR-LIKE, all 9 models (7828 contract-scorings), pooled RMSE $
+               model  pooled_rmse  ci_lo  ci_hi  vs_BSM
+StickyStrike_Surface        0.864  0.660  1.121  -0.542
+              Merton        1.233  1.053  1.409  -0.347
+              Heston        1.256  1.027  1.522  -0.335
+                SABR        1.290  1.017  1.609  -0.317
+     LocalVol_Dupire        1.359  1.173  1.565  -0.280
+              GBM_MC        1.879  1.729  2.023  -0.005
+        CRR_American        1.883  1.734  2.033  -0.003
+             Black76        1.889  1.741  2.045  -0.000
+                 BSM        1.889  1.736  2.047   0.000
+
+BY HORIZON (trading days)
+           BSM  Black76  GBM_MC  CRR_American  Heston   SABR  Merton  StickyStrike_Surface  LocalVol_Dupire
+horizon                                                                                                    
+5        1.780    1.780   1.774         1.773   1.022  1.017   1.067                 0.779            1.152
+10       1.911    1.911   1.899         1.905   1.315  1.369   1.290                 0.813            1.275
+21       1.975    1.975   1.963         1.970   1.408  1.453   1.330                 0.992            1.621
+
+BY YEAR (selected models)
+        BSM   SABR  StickyStrike_Surface  LocalVol_Dupire
+year                                                     
+2010  0.797  0.485                 0.316            0.375
+2011  0.904  0.583                 0.424            0.527
+2012  0.906  0.494                 0.290            0.385
+2013  0.750  0.383                 0.256            0.282
+2014  0.972  0.691                 0.278            0.535
+2015  1.113  0.502                 0.304            0.561
+2016  1.268  0.685                 0.340            0.690
+2017  1.046  0.450                 0.365            0.610
+2018  1.421  0.822                 0.512            1.287
+2019  1.503  0.736                 0.565            0.889
+2020  2.846  2.901                 2.145            2.288
+2021  2.633  1.255                 1.081            1.514
+2022  2.736  2.211                 0.836            2.411
+2023  2.305  1.277                 0.716            1.528
+2024  2.216  1.280                 1.155            1.769
+2025  3.314  2.077                 1.370            2.356
+
+Head to head: Dupire beats SABR on 47.8% of contracts, beats StickyStrike_Surface on 36.6%

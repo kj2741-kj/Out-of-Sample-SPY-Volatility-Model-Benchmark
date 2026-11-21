@@ -24,7 +24,7 @@ from phase4_heston_calibration import PROJ, Q_DIV
 
 IN = f"{PROJ}\\results\\phase11_contract_days.csv"
 OUT = f"{PROJ}\\results\\phase11_summary.txt"
-MODELS = ["BS_market", "BS_calib", "SABR", "Merton"]
+MODELS = ["BS_market", "BS_calib", "SABR", "Merton", "LocalVol"]
 STRESS = (pd.Timestamp("2020-02-20"), pd.Timestamp("2020-04-30"))
 RNG = np.random.default_rng(11)
 NBOOT = 2000
