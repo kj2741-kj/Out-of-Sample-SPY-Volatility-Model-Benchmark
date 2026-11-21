@@ -54,6 +54,24 @@ misses the mid by 0.485 pooled (0.560 in 2014-25, 0.142 in 2010-13), because cal
 vendor IVs while scoring uses mids under this project's rate and dividend assumptions. Much of the
 2014-25 "era effect" is this data-convention gap rather than a harder market.
 
+## Greeks, delta hedging and P&L explain (Phase 11, 2020-2021)
+
+An extension on the 24 monthly calibration dates of 2020 (COVID stress) and 2021 (calm). Each date's
+scoring-grid contracts are followed daily for up to 21 trading days with parameters frozen:
+7,196 contract-days, 355 contracts, 6,818 one-day hedges. Details: [`docs/phase11_greeks_hedging_notes.md`](docs/phase11_greeks_hedging_notes.md).
+
+- **Greeks.** SABR and Merton deltas (bump-and-reprice) sit above the Black-Scholes delta at the market's
+  own implied vol, by +0.08 to +0.13 at the money.
+- **Hedging.** A daily delta hedge with Black-Scholes at market implied vol has the smallest error. Frozen
+  SABR and Merton deltas roughly double the squared hedging error (SABR -100%, 95% cluster-bootstrap
+  interval -195% to -53%). The variance-minimising delta sits below Black-Scholes in every slice, so the
+  smile models move delta the wrong way.
+- **P&L explain.** Unexplained daily option P&L: delta 31%, +gamma 29%, +vega 12%, +theta 4.9%.
+
+**Known issue found in this phase:** models 7 and 8 were priced with QuantLib's `FdBlackScholesVanillaEngine`
+without `localVol=True`, so they price at the Black vol by strike. They are frozen implied-vol surfaces
+(sticky strike), not Dupire local volatility. Their scores are valid for that model; the label is not.
+
 ## Models
 
 | | Model | Implementation |
@@ -104,6 +122,9 @@ python src/phase8_merton_batch.py         # Merton,  192 dates
 python src/phase9_prep_constvol.py        # constant-vol baseline
 python src/phase9_oos_runner.py           # out-of-sample scoring
 python src/phase10_analysis.py            # summary tables
+python src/phase11_greeks_hedging.py      # Greeks panel 2020-21
+python src/phase11_analysis.py            # hedging + P&L explain tables
+python src/phase11_audit.py               # audit checks
 ```
 
 All batch scripts are resumable and skip already-completed dates.
@@ -115,7 +136,7 @@ Checks: `python tests/test_scoring.py` (quote filters, pooled RMSE, like-for-lik
 
 ## Scope and limitations
 
-This is a **pricing-accuracy study, not a trading study** — no transaction costs, hedging or
-execution are modelled, and lower pricing error does not imply profitability. Single underlying
+This is a **pricing-accuracy study, not a trading study** — no transaction costs or execution are
+modelled (Phase 11 adds a daily delta-hedging test on 2020-2021), and lower pricing error does not imply profitability. Single underlying
 (SPY). Flat 1.4% dividend proxy. Monthly calibration cadence only. Calibration targets vendor IVs, which creates a
 shared error floor (above). Full list in `docs/FINAL_REPORT.md` §8.

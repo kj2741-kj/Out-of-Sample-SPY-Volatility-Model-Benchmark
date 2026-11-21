@@ -1,0 +1,14 @@
+MV slope All       : extra delta -0.0323 per share; SSE cut vs BS_market 6.560% (in-sample, n=6712)
+MV slope 2020      : extra delta -0.0254 per share; SSE cut vs BS_market 3.652% (in-sample, n=3308)
+MV slope 2021      : extra delta -0.0503 per share; SSE cut vs BS_market 21.473% (in-sample, n=3404)
+MV slope OTM puts  : extra delta -0.0433 per share; SSE cut vs BS_market 10.420% (in-sample, n=2737)
+MV slope ATM       : extra delta -0.0388 per share; SSE cut vs BS_market 7.691% (in-sample, n=1361)
+MV slope OTM calls : extra delta -0.0172 per share; SSE cut vs BS_market 2.523% (in-sample, n=2614)
+mean delta SABR - BS_calib: +0.0551
+mean delta Merton - BS_calib: +0.0457
+SABR slices 2020-21: 120, rho at -0.999 bound: 4.2%
+SABR gain vs BS_market excluding 1 calib dates with rho mostly at bound: -1.476 (n=6415)
+age  0- 7d n=2102: BS_calib -0.049, SABR -0.621, Merton -0.452
+age  8-15d n=1932: BS_calib -0.346, SABR -1.449, Merton -1.247
+age 16-35d n=2678: BS_calib -0.066, SABR -0.984, Merton -0.892
+hedge RMSE BS_market 0.601; mean |dV| 1.021
